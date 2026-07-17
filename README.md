@@ -163,11 +163,13 @@ python -m fuzzer.cli \
   --turns 10
 ```
 
-Against a real target:
+Against a real target (most non-trivial servers require auth — `--header` is
+repeatable, so pass as many as the server needs):
 
 ```bash
 python -m fuzzer.cli --url https://your-mcp-server/mcp --tool <tool_name> \
-  --arguments '{"...": "..."}' --plugin sql_injection --turns 50 --out report.json
+  --arguments '{"...": "..."}' --plugin sql_injection --turns 50 \
+  --header "Authorization=Bearer $MCP_TOKEN" --out report.json
 ```
 
 Exit code is `1` if any finding was raised, `0` otherwise (CI-friendly).

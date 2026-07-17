@@ -45,14 +45,34 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "connections instead of scoped per session)."
         ),
     )
+    parser.add_argument(
+        "--header",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Extra HTTP header to send with every request, e.g. 'Authorization=Bearer token' "
+        "(repeatable; only applies to --transport http)",
+    )
     parser.add_argument("--out", default=None, help="Write the JSON report to this path")
     return parser.parse_args(argv)
 
 
-def build_transport(args: argparse.Namespace) -> Transport:
+def parse_headers(header_args: list[str]) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for item in header_args:
+        if "=" not in item:
+            raise ValueError(f"invalid --header value {item!r}, expected KEY=VALUE")
+        key, _, value = item.partition("=")
+        if not key:
+            raise ValueError(f"invalid --header value {item!r}, expected KEY=VALUE")
+        headers[key] = value
+    return headers
+
+
+def build_transport(args: argparse.Namespace, headers: dict[str, str]) -> Transport:
     if args.transport == "stdio":
         return StdioTransport(args.url)
-    return StreamableHTTPTransport(args.url)
+    return StreamableHTTPTransport(args.url, headers=headers)
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -62,9 +82,15 @@ async def _run(args: argparse.Namespace) -> int:
         print(f"error: --arguments is not valid JSON: {exc}", file=sys.stderr)
         return 2
 
+    try:
+        headers = parse_headers(args.header)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     if args.sessions > 1:
         report = await run_cross_session_campaign(
-            transport_factory=lambda: build_transport(args),
+            transport_factory=lambda: build_transport(args, headers),
             plugin_factory=lambda: get_plugin(args.plugin),
             tool_name=args.tool,
             base_arguments=base_arguments,
@@ -73,7 +99,7 @@ async def _run(args: argparse.Namespace) -> int:
             turns_per_session=args.turns,
         )
     else:
-        transport = build_transport(args)
+        transport = build_transport(args, headers)
         plugin = get_plugin(args.plugin)
         detectors = [CrossTurnLeakDetector(), LatencyDriftDetector()]
         engine = FuzzEngine(
