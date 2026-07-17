@@ -16,6 +16,7 @@ class Turn:
 @dataclass
 class SessionState:
     session_id: str | None = None
+    run_id: str | None = None
     protocol_version: str | None = None
     server_capabilities: dict = field(default_factory=dict)
     turns: list[Turn] = field(default_factory=list)
@@ -40,3 +41,11 @@ class StateTracker:
 
     def add_marker(self, marker: str) -> None:
         self.state.custom.setdefault("injected_markers", []).append(marker)
+
+    def set_run_id(self, run_id: str) -> None:
+        """Assigns a client-controlled identifier for this campaign run,
+        independent of whatever session id the server hands back. Used to
+        keep markers unique across independent sessions in a cross-session
+        campaign even if the server naively reuses the same session id for
+        every connection."""
+        self.state.run_id = run_id

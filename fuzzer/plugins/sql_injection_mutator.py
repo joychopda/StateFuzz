@@ -24,7 +24,7 @@ class SQLInjectionMutator(MutationPlugin):
     name = "sql_injection"
 
     def mutate(self, turn_index: int, base_arguments: dict[str, Any], tracker: StateTracker) -> dict[str, Any]:
-        marker = f"SFUZZ-{tracker.state.session_id or 'nosession'}-{turn_index}"
+        marker = f"SFUZZ-{tracker.state.run_id or tracker.state.session_id or 'nosession'}-{turn_index}"
         tracker.add_marker(marker)
 
         payload = _PAYLOAD_TEMPLATES[turn_index % len(_PAYLOAD_TEMPLATES)]

@@ -5,6 +5,7 @@ import asyncio
 import json
 import sys
 
+from .core.cross_session import run_cross_session_campaign
 from .core.detector import CrossTurnLeakDetector, LatencyDriftDetector
 from .core.engine import FuzzEngine
 from .core.mutator import available_plugins, get_plugin
@@ -19,24 +20,54 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--plugin", default="sql_injection", choices=available_plugins())
     parser.add_argument("--turns", type=int, default=20)
     parser.add_argument("--delay", type=float, default=0.0, help="Seconds to sleep between turns")
+    parser.add_argument(
+        "--sessions",
+        type=int,
+        default=1,
+        help=(
+            "Number of independent sessions to run concurrently against the same server. "
+            ">1 switches to cross-session mode: each session gets its own connection and "
+            "marker namespace, and CrossSessionLeakDetector checks whether one session's "
+            "marker resurfaces in another session's response (state shared across "
+            "connections instead of scoped per session)."
+        ),
+    )
     parser.add_argument("--out", default=None, help="Write the JSON report to this path")
     return parser.parse_args(argv)
 
 
 async def _run(args: argparse.Namespace) -> int:
-    transport = StreamableHTTPTransport(args.url)
-    plugin = get_plugin(args.plugin)
-    detectors = [CrossTurnLeakDetector(), LatencyDriftDetector()]
-    engine = FuzzEngine(
-        transport=transport,
-        plugin=plugin,
-        tool_name=args.tool,
-        base_arguments=json.loads(args.arguments),
-        detectors=detectors,
-        max_turns=args.turns,
-        delay=args.delay,
-    )
-    report = await engine.run_campaign()
+    try:
+        base_arguments = json.loads(args.arguments)
+    except json.JSONDecodeError as exc:
+        print(f"error: --arguments is not valid JSON: {exc}", file=sys.stderr)
+        return 2
+
+    if args.sessions > 1:
+        report = await run_cross_session_campaign(
+            transport_factory=lambda: StreamableHTTPTransport(args.url),
+            plugin_factory=lambda: get_plugin(args.plugin),
+            tool_name=args.tool,
+            base_arguments=base_arguments,
+            turn_detectors=[CrossTurnLeakDetector(), LatencyDriftDetector()],
+            num_sessions=args.sessions,
+            turns_per_session=args.turns,
+        )
+    else:
+        transport = StreamableHTTPTransport(args.url)
+        plugin = get_plugin(args.plugin)
+        detectors = [CrossTurnLeakDetector(), LatencyDriftDetector()]
+        engine = FuzzEngine(
+            transport=transport,
+            plugin=plugin,
+            tool_name=args.tool,
+            base_arguments=base_arguments,
+            detectors=detectors,
+            max_turns=args.turns,
+            delay=args.delay,
+        )
+        report = await engine.run_campaign()
+
     payload = json.dumps(report.to_dict(), indent=2, default=str)
 
     if args.out:

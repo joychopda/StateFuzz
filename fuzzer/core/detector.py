@@ -59,6 +59,65 @@ class CrossTurnLeakDetector(Detector):
         return findings
 
 
+class CrossSessionDetector(ABC):
+    """Strategy interface for detectors that compare state across multiple
+    *independent* sessions rather than across turns within a single session.
+    Unlike ``Detector``, this runs once, after every session in a cross-session
+    campaign has finished, with the full set of per-session trackers."""
+
+    name: str
+
+    @abstractmethod
+    def analyze(self, trackers: list[StateTracker]) -> list[Finding]:
+        """Inspect every session's recorded turns and return zero or more findings."""
+
+
+class CrossSessionLeakDetector(CrossSessionDetector):
+    """Flags a session whose response contains a marker injected by a
+    *different*, independently-run session against the same server. A
+    well-isolated server should never let one client's session data resurface
+    in another client's session — if it does, state is shared across
+    connections instead of being scoped per session (e.g. a process-global
+    cache/slot instead of a per-session one)."""
+
+    name = "cross_session_leak"
+
+    def analyze(self, trackers: list[StateTracker]) -> list[Finding]:
+        findings: list[Finding] = []
+        for leaking_idx, leaking_tracker in enumerate(trackers):
+            own_markers = set(leaking_tracker.state.custom.get("injected_markers", []))
+            for turn in leaking_tracker.state.turns:
+                if not turn.response:
+                    continue
+                response_text = json.dumps(turn.response)
+                for origin_idx, origin_tracker in enumerate(trackers):
+                    if origin_idx == leaking_idx:
+                        continue
+                    for marker in origin_tracker.state.custom.get("injected_markers", []):
+                        if marker in own_markers or marker not in response_text:
+                            continue
+                        findings.append(
+                            Finding(
+                                detector=self.name,
+                                severity="critical",
+                                turn_index=turn.index,
+                                description=(
+                                    f"Session {leaking_idx}'s turn {turn.index} response contains a "
+                                    f"marker injected by independent session {origin_idx}, indicating "
+                                    "the server shares state across sessions instead of scoping it "
+                                    "per session."
+                                ),
+                                evidence={
+                                    "leaked_marker": marker,
+                                    "leaking_session": leaking_idx,
+                                    "origin_session": origin_idx,
+                                    "response": turn.response,
+                                },
+                            )
+                        )
+        return findings
+
+
 class LatencyDriftDetector(Detector):
     """Uses response latency as a cheap proxy for server-side resource growth.
     A monotonic blow-up relative to an early baseline is consistent with a
