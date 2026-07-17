@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import statistics
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
@@ -120,37 +121,119 @@ class CrossSessionLeakDetector(CrossSessionDetector):
 
 class LatencyDriftDetector(Detector):
     """Uses response latency as a cheap proxy for server-side resource growth.
-    A monotonic blow-up relative to an early baseline is consistent with a
-    per-session memory leak or an unbounded state structure accumulating
-    across consecutive calls."""
+    Baselines mean *and* stddev of the first ``window`` turns, then flags a
+    later turn only if it clears both:
+      1. ``mean + k * stddev`` — a statistically meaningful outlier relative
+         to the baseline's own variance, not a flat multiple of the mean
+         (which false-positives on servers whose latency is naturally noisy
+         but not actually leaking).
+      2. an absolute floor (``floor_seconds``) — so a baseline with near-zero
+         latency and near-zero stddev doesn't flag routine jitter of a few
+         milliseconds as a "leak" just because it's technically several
+         stddevs above ~0.
+
+    This catches a sharp, single-turn blow-up. It does *not* catch a slow,
+    steady leak where every turn is only marginally slower than the last —
+    that's what ``LatencyTrendDetector`` is for."""
 
     name = "latency_drift"
 
-    def __init__(self, window: int = 5, ratio_threshold: float = 3.0) -> None:
+    def __init__(self, window: int = 5, k: float = 4.0, floor_seconds: float = 0.05) -> None:
         self.window = window
-        self.ratio_threshold = ratio_threshold
+        self.k = k
+        self.floor_seconds = floor_seconds
 
     def analyze(self, tracker: StateTracker, turn: Turn) -> list[Finding]:
         turns = tracker.state.turns
         if len(turns) <= self.window:
             return []
 
-        baseline = sum(t.latency for t in turns[: self.window]) / self.window
-        if baseline <= 0:
-            return []
+        baseline_latencies = [t.latency for t in turns[: self.window]]
+        mean = statistics.fmean(baseline_latencies)
+        stddev = statistics.pstdev(baseline_latencies) if len(baseline_latencies) > 1 else 0.0
+        threshold = mean + self.k * stddev
 
-        if turn.latency > baseline * self.ratio_threshold:
+        if turn.latency > threshold and turn.latency > self.floor_seconds:
             return [
                 Finding(
                     detector=self.name,
                     severity="medium",
                     turn_index=turn.index,
                     description=(
-                        f"Turn {turn.index} latency ({turn.latency:.3f}s) is "
-                        f"{turn.latency / baseline:.1f}x the first-{self.window}-turn baseline "
-                        f"({baseline:.3f}s) — possible unbounded state growth across turns."
+                        f"Turn {turn.index} latency ({turn.latency:.3f}s) exceeds the first-"
+                        f"{self.window}-turn baseline (mean={mean:.3f}s, stddev={stddev:.3f}s) by "
+                        f"more than {self.k}x stddev (threshold={threshold:.3f}s) — possible "
+                        "unbounded state growth across turns."
                     ),
-                    evidence={"latency": turn.latency, "baseline": baseline},
+                    evidence={
+                        "latency": turn.latency,
+                        "baseline_mean": mean,
+                        "baseline_stddev": stddev,
+                        "threshold": threshold,
+                    },
+                )
+            ]
+        return []
+
+
+def _linear_regression(xs: list[float], ys: list[float]) -> tuple[float, float]:
+    """Ordinary least-squares slope and r-squared for a simple linear fit,
+    with no numpy dependency since this is the only place that'd need it."""
+    n = len(xs)
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    ss_xy = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    ss_xx = sum((x - mean_x) ** 2 for x in xs)
+    ss_yy = sum((y - mean_y) ** 2 for y in ys)
+
+    if ss_xx == 0:
+        return 0.0, 0.0
+    slope = ss_xy / ss_xx
+    r_squared = 0.0 if ss_yy == 0 else (ss_xy**2) / (ss_xx * ss_yy)
+    return slope, r_squared
+
+
+class LatencyTrendDetector(Detector):
+    """Complementary to ``LatencyDriftDetector``: fits a simple linear
+    regression of latency against turn index across the *entire* turn
+    history and flags a sustained, statistically confident upward trend.
+
+    ``LatencyDriftDetector`` only compares one turn against an early
+    baseline window, so it catches a sharp blow-up but misses a slow, steady
+    leak where every turn is only marginally slower than the last — no
+    single turn ever clears a stddev-based threshold, but the trend across
+    the whole campaign is unmistakably upward. This detector exists
+    specifically to catch that slow-leak case."""
+
+    name = "latency_trend"
+
+    def __init__(self, min_turns: int = 8, slope_threshold: float = 0.01, r_squared_threshold: float = 0.5) -> None:
+        self.min_turns = min_turns
+        self.slope_threshold = slope_threshold
+        self.r_squared_threshold = r_squared_threshold
+
+    def analyze(self, tracker: StateTracker, turn: Turn) -> list[Finding]:
+        turns = tracker.state.turns
+        if len(turns) < self.min_turns:
+            return []
+
+        xs = [float(t.index) for t in turns]
+        ys = [t.latency for t in turns]
+        slope, r_squared = _linear_regression(xs, ys)
+
+        if slope > self.slope_threshold and r_squared >= self.r_squared_threshold:
+            return [
+                Finding(
+                    detector=self.name,
+                    severity="medium",
+                    turn_index=turn.index,
+                    description=(
+                        f"Latency shows a sustained upward trend across all {len(turns)} turns "
+                        f"(slope={slope:.4f}s/turn, r²={r_squared:.2f}) — consistent with a "
+                        "slow per-turn resource leak that a single-window baseline comparison "
+                        "would miss."
+                    ),
+                    evidence={"slope": slope, "r_squared": r_squared, "turns": len(turns)},
                 )
             ]
         return []

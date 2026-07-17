@@ -30,7 +30,7 @@ if something is actually *watching the session evolve*.
 | Judges based on one response | Yes | N/A (no traffic) | No — judges the **accumulated session history** |
 | Can catch state bleeding *within* one session, across turns | No | No | **Yes** (`cross_turn_leak`) |
 | Can catch state bleeding *across* independent sessions | No | No | **Yes** (`cross_session_leak`, via `--sessions N`) |
-| Can catch unbounded per-session memory growth | No | No | **Yes** (`latency_drift`) |
+| Can catch unbounded per-session memory growth | No | No | **Yes** (`latency_drift`, `latency_trend`) |
 | Extending detection strategy | Fork the tool | Fork the tool | Drop a file in `fuzzer/plugins/`, no other changes |
 | Proven against a real bug over real HTTP traffic | — | — | **Yes** — end-to-end test hits a genuinely buggy live server |
 
@@ -58,10 +58,14 @@ Concretely, the cool parts:
   contains a marker injected by a *different* session — direct proof of a
   process-global slot or connection-unscoped cache, the more severe bug
   class the README used to just assert without a code path to prove it.
-- **Latency as a memory-leak proxy.** `LatencyDriftDetector` baselines the
-  first few turns and flags any turn whose latency blows past that baseline
-  — a cheap, transport-level signal for unbounded per-session state growth,
-  with no server-side instrumentation required.
+- **Latency as a memory-leak proxy, without flat-multiple false positives.**
+  `LatencyDriftDetector` baselines the mean *and* stddev of the first few
+  turns and only flags a turn that clears both `mean + k*stddev` and an
+  absolute floor — so jitter on a fast server doesn't trigger noise the way
+  a flat `mean * 3` threshold would. `LatencyTrendDetector` complements it
+  with a linear-regression slope across the *entire* turn history, catching
+  a slow, steady leak that never produces one outlier turn but is
+  unmistakable in aggregate. Neither requires server-side instrumentation.
 - **Zero-friction extensibility.** New mutation strategy → subclass
   `MutationPlugin`, add `@register`, drop the file in `fuzzer/plugins/`. The
   loader (`pkgutil.iter_modules`) finds it automatically — it's immediately
@@ -197,7 +201,8 @@ traffic, not just in unit isolation.
 |---|---|---|---|
 | `cross_turn_leak` | within one session | earlier turn's marker resurfaces in a later response, same session | shared/unisolated per-session state |
 | `cross_session_leak` | across N independent sessions (`--sessions N`) | one session's marker resurfaces in a *different* session's response | process-global or connection-unscoped state |
-| `latency_drift` | within one session | response latency blows up vs. an early-turn baseline | unbounded per-session state growth / memory leaks |
+| `latency_drift` | within one session | a turn's latency exceeds `mean + k*stddev` of an early baseline window, and an absolute floor | unbounded per-session state growth / memory leaks (sharp blow-up) |
+| `latency_trend` | within one session | linear-regression slope of latency vs. turn index across the whole history is positive and confident (r²) | the same, but a slow steady leak with no single outlier turn |
 
 ## Roadmap
 
