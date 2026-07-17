@@ -17,6 +17,7 @@ class CrossSessionReport:
     sessions_run: int
     turns_per_session: int
     findings: list[Finding] = field(default_factory=list)
+    campaign_errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -24,6 +25,7 @@ class CrossSessionReport:
             "plugin": self.plugin,
             "sessions_run": self.sessions_run,
             "turns_per_session": self.turns_per_session,
+            "campaign_errors": self.campaign_errors,
             "findings": [
                 {
                     "detector": f.detector,
@@ -78,8 +80,11 @@ async def run_cross_session_campaign(
     cross_session_findings = CrossSessionLeakDetector().analyze([engine.tracker for engine in engines])
 
     all_findings: list[Finding] = list(cross_session_findings)
+    campaign_errors: list[str] = []
     for report in campaign_reports:
         all_findings.extend(report.findings)
+        if report.campaign_error:
+            campaign_errors.append(report.campaign_error)
 
     return CrossSessionReport(
         tool=tool_name,
@@ -87,4 +92,5 @@ async def run_cross_session_campaign(
         sessions_run=num_sessions,
         turns_per_session=turns_per_session,
         findings=all_findings,
+        campaign_errors=campaign_errors,
     )

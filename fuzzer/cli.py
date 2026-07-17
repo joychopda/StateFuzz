@@ -119,7 +119,9 @@ async def _run(args: argparse.Namespace) -> int:
         with open(args.out, "w") as f:
             f.write(payload)
     print(payload)
-    return 1 if report.findings else 0
+
+    campaign_failed = bool(getattr(report, "campaign_error", None) or getattr(report, "campaign_errors", None))
+    return 1 if report.findings or campaign_failed else 0
 
 
 def main(argv: list[str] | None = None) -> None:
