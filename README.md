@@ -88,7 +88,7 @@ fuzzer/
 │   ├── session.py        # SessionState / StateTracker — one session's memory
 │   ├── mutator.py        # MutationPlugin ABC + self-registering plugin loader
 │   ├── detector.py       # Detector/CrossSessionDetector ABCs + CrossTurnLeakDetector,
-│   │                     # CrossSessionLeakDetector, LatencyDriftDetector
+│   │                     # CrossSessionLeakDetector, LatencyDriftDetector, LatencyTrendDetector
 │   ├── engine.py         # FuzzEngine — orchestrates one session's campaign turn by turn
 │   └── cross_session.py  # runs N independent FuzzEngine sessions, then diffs their trackers
 ├── plugins/
@@ -103,8 +103,11 @@ fuzzer/
 - New mutation strategy → drop a file in `fuzzer/plugins/`, subclass
   `MutationPlugin`, decorate with `@register`. It's picked up automatically
   (`--plugin <name>` on the CLI) — no other file needs to change.
-- New detector → subclass `Detector`, add it to the `detectors` list passed
-  into `FuzzEngine` (currently wired in `cli.py`).
+- New within-session detector → subclass `Detector`, add it to the
+  `detectors` list passed into `FuzzEngine` (currently wired in `cli.py`).
+- New across-session detector → subclass `CrossSessionDetector`, run it in
+  `run_cross_session_campaign` (`fuzzer/core/cross_session.py`) against the
+  full list of per-session trackers once every session has finished.
 - New transport (e.g. WebSocket) → subclass `Transport`. `StreamableHTTPTransport`
   and `StdioTransport` are the two that exist today, selectable via
   `--transport {http,stdio}`.
@@ -180,7 +183,9 @@ python -m fuzzer.cli --url https://your-mcp-server/mcp --tool <tool_name> \
   --header "Authorization=Bearer $MCP_TOKEN" --out report.json
 ```
 
-Exit code is `1` if any finding was raised, `0` otherwise (CI-friendly).
+Exit code is `1` if any finding was raised or the campaign itself failed
+(e.g. the target refused the connection), `0` on a clean run, `2` for a
+usage error like malformed `--arguments`/`--header` (CI-friendly).
 
 ## Tests
 
