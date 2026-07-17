@@ -8,6 +8,7 @@ from typing import Any
 from .session import StateTracker
 
 _REGISTRY: dict[str, type["MutationPlugin"]] = {}
+_LOADED = False
 
 
 class MutationPlugin(ABC):
@@ -31,14 +32,16 @@ def load_plugins() -> None:
     """Import every module under fuzzer.plugins so that classes decorated
     with @register self-register. Dropping a new file into plugins/ is
     enough to make it available — no other wiring required."""
+    global _LOADED
     from .. import plugins as plugins_pkg
 
     for _, module_name, _ in pkgutil.iter_modules(plugins_pkg.__path__):
         importlib.import_module(f"{plugins_pkg.__name__}.{module_name}")
+    _LOADED = True
 
 
 def get_plugin(name: str) -> MutationPlugin:
-    if not _REGISTRY:
+    if not _LOADED:
         load_plugins()
     if name not in _REGISTRY:
         raise KeyError(f"unknown mutation plugin '{name}', available: {sorted(_REGISTRY)}")
@@ -46,6 +49,6 @@ def get_plugin(name: str) -> MutationPlugin:
 
 
 def available_plugins() -> list[str]:
-    if not _REGISTRY:
+    if not _LOADED:
         load_plugins()
     return sorted(_REGISTRY)

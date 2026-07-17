@@ -90,7 +90,9 @@ fuzzer/
 │   ├── engine.py         # FuzzEngine — orchestrates one session's campaign turn by turn
 │   └── cross_session.py  # runs N independent FuzzEngine sessions, then diffs their trackers
 ├── plugins/
-│   └── sql_injection_mutator.py   # first mutation strategy
+│   ├── sql_injection_mutator.py        # SQLi-style payload append + marker tagging
+│   ├── type_confusion_mutator.py       # boundary/type-confusion: schema validation probing
+│   └── identity_confusion_mutator.py   # session/identity-confusion: authorization drift probing
 ├── mock_server.py     # deliberately vulnerable target used by tests/
 └── cli.py             # `mcp-fuzz` entry point
 ```
@@ -194,6 +196,17 @@ request), run real campaigns against it over HTTP, and assert:
 
 both proving the detection logic works against real request/response
 traffic, not just in unit isolation.
+
+## Mutation plugins (current)
+
+| Plugin | Strategy | Probes for |
+|---|---|---|
+| `sql_injection` | appends a rotating SQLi payload to every string argument; tags each turn with a unique marker | shared/leaked state (via the marker, read by `cross_turn_leak`/`cross_session_leak`) |
+| `type_confusion` | rotates one argument per turn through: type swap, dropped key, injected null, oversized string, deeply nested object | schema/input validation — a handler that trusts its declared types instead of checking them tends to crash or misbehave |
+| `identity_confusion` | finds an argument that looks like a session/user/account id and rotates it through: unmodified baseline, a different identity, a numeric neighbor, a privileged sentinel (`admin`, `root`, ...) | authorization drift — state/decisions that should be re-derived from the current identity every call but instead persist across identities |
+
+`--plugin <name>` selects one on the CLI; `available_plugins()` (backed by
+the self-registering `@register` loader) is what feeds its `choices`.
 
 ## Detectors (current)
 
