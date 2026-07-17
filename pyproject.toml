@@ -2,6 +2,7 @@
 name = "mcp-stateful-fuzzer"
 version = "0.1.0"
 description = "Stateful, multi-turn fuzzer for Model Context Protocol (MCP) servers"
+license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.9",

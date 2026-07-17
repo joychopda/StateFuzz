@@ -1,2 +1,0 @@
-[console_scripts]
-mcp-fuzz = fuzzer.cli:main
