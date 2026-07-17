@@ -5,9 +5,9 @@ import asyncio
 import json
 import sys
 
-from .core.cross_session import run_cross_session_campaign
+from .core.cross_session import CrossSessionReport, run_cross_session_campaign
 from .core.detector import CrossTurnLeakDetector, LatencyDriftDetector, LatencyTrendDetector
-from .core.engine import FuzzEngine
+from .core.engine import CampaignReport, FuzzEngine
 from .core.mutator import available_plugins, get_plugin
 from .core.transport import StdioTransport, StreamableHTTPTransport, Transport
 
@@ -88,6 +88,7 @@ async def _run(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    report: CampaignReport | CrossSessionReport
     if args.sessions > 1:
         report = await run_cross_session_campaign(
             transport_factory=lambda: build_transport(args, headers),

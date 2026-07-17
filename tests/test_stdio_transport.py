@@ -23,9 +23,7 @@ async def test_stdio_transport_drives_a_full_campaign():
 
     assert report.turns_run == 4
     assert all(turn.error is None for turn in engine.tracker.state.turns)
-    assert all(
-        turn.response is not None and "result" in turn.response for turn in engine.tracker.state.turns
-    )
+    assert all(turn.response is not None and "result" in turn.response for turn in engine.tracker.state.turns)
     # the echoed arguments should carry the mutated, marker-tagged value back
     first_echoed = engine.tracker.state.turns[0].response["result"]["echoed"]
     assert "SFUZZ-" in first_echoed["value"]

@@ -182,7 +182,7 @@ def _linear_regression(xs: list[float], ys: list[float]) -> tuple[float, float]:
     n = len(xs)
     mean_x = sum(xs) / n
     mean_y = sum(ys) / n
-    ss_xy = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    ss_xy = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True))
     ss_xx = sum((x - mean_x) ** 2 for x in xs)
     ss_yy = sum((y - mean_y) ** 2 for y in ys)
 
@@ -207,7 +207,9 @@ class LatencyTrendDetector(Detector):
 
     name = "latency_trend"
 
-    def __init__(self, min_turns: int = 8, slope_threshold: float = 0.01, r_squared_threshold: float = 0.5) -> None:
+    def __init__(
+        self, min_turns: int = 8, slope_threshold: float = 0.01, r_squared_threshold: float = 0.5
+    ) -> None:
         self.min_turns = min_turns
         self.slope_threshold = slope_threshold
         self.r_squared_threshold = r_squared_threshold

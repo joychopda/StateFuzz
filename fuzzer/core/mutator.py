@@ -7,7 +7,7 @@ from typing import Any
 
 from .session import StateTracker
 
-_REGISTRY: dict[str, type["MutationPlugin"]] = {}
+_REGISTRY: dict[str, type[MutationPlugin]] = {}
 _LOADED = False
 
 

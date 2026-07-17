@@ -13,6 +13,7 @@ fuzzer end to end (see tests/). It has three real bugs, one per tool:
   instead of deriving authorization from the current call's identity every
   time (exercised by the identity_confusion plugin).
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -69,9 +70,7 @@ async def handle(request: web.Request) -> web.Response:
         if name == "profile.update":
             age = arguments["age"]  # bug: no type/presence validation at all
             new_age = age + 1  # crashes on anything that isn't an int
-            return web.json_response(
-                {"jsonrpc": "2.0", "id": req_id, "result": {"new_age": new_age}}
-            )
+            return web.json_response({"jsonrpc": "2.0", "id": req_id, "result": {"new_age": new_age}})
 
         if name == "resource.read":
             user_id = arguments.get("user_id")
@@ -97,7 +96,9 @@ async def handle(request: web.Request) -> web.Response:
             {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": f"unknown tool {name}"}}
         )
 
-    return web.json_response({"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "unknown method"}})
+    return web.json_response(
+        {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "unknown method"}}
+    )
 
 
 def build_app() -> web.Application:

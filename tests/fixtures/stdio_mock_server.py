@@ -6,6 +6,7 @@ StdioTransport speaks. Its one tool, ``echo``, just echoes the arguments it
 was given back in the result — enough to prove the transport itself (spawn,
 handshake, request/response framing, shutdown) works end to end.
 """
+
 from __future__ import annotations
 
 import json

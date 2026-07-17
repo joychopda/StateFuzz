@@ -100,7 +100,7 @@ class StreamableHTTPTransport(Transport):
     def _parse_sse(body: str) -> dict | None:
         for line in body.splitlines():
             if line.startswith("data:"):
-                return json.loads(line[len("data:"):].strip())
+                return json.loads(line[len("data:") :].strip())
         return None
 
 
@@ -138,7 +138,8 @@ class StdioTransport(Transport):
             },
         }
         result = await self._write_and_read(request)
-        await self._write_and_read({"jsonrpc": "2.0", "method": "notifications/initialized"}, expect_response=False)
+        notification = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        await self._write_and_read(notification, expect_response=False)
         return result
 
     async def send(self, request: dict) -> tuple[dict | None, str | None]:
@@ -157,7 +158,7 @@ class StdioTransport(Transport):
             self._process.stdin.close()
         try:
             await asyncio.wait_for(self._process.wait(), timeout=self._timeout)
-        except (asyncio.TimeoutError, ProcessLookupError):
+        except (TimeoutError, ProcessLookupError):
             self._process.kill()
             await self._process.wait()
 

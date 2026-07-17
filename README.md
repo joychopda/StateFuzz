@@ -1,5 +1,7 @@
 # StateFuzz
 
+[![CI](https://github.com/joychopda/StateFuzz/actions/workflows/ci.yml/badge.svg)](https://github.com/joychopda/StateFuzz/actions/workflows/ci.yml)
+
 **Multi-turn, session-aware fuzzer for Model Context Protocol (MCP) servers.**
 
 ## The gap this fills
@@ -184,6 +186,14 @@ Exit code is `1` if any finding was raised, `0` otherwise (CI-friendly).
 
 ```bash
 python -m pytest tests/ -v
+```
+
+Linting, formatting, and type checking (same checks CI runs, via `.github/workflows/ci.yml`):
+
+```bash
+ruff check .
+ruff format --check .
+mypy
 ```
 
 The end-to-end tests spin up the intentionally-buggy mock server (which
