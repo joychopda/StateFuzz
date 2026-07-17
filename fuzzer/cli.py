@@ -9,12 +9,25 @@ from .core.cross_session import run_cross_session_campaign
 from .core.detector import CrossTurnLeakDetector, LatencyDriftDetector
 from .core.engine import FuzzEngine
 from .core.mutator import available_plugins, get_plugin
-from .core.transport import StreamableHTTPTransport
+from .core.transport import StdioTransport, StreamableHTTPTransport, Transport
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stateful MCP server fuzzer")
-    parser.add_argument("--url", required=True, help="MCP endpoint, e.g. http://localhost:8765/mcp")
+    parser.add_argument(
+        "--transport",
+        choices=["http", "stdio"],
+        default="http",
+        help="Transport to speak to the target over (default: http)",
+    )
+    parser.add_argument(
+        "--url",
+        required=True,
+        help=(
+            "MCP endpoint, e.g. http://localhost:8765/mcp (--transport http), "
+            "or the command to spawn the server, e.g. 'python -m my_mcp_server' (--transport stdio)"
+        ),
+    )
     parser.add_argument("--tool", required=True, help="Tool name to fuzz (tools/call target)")
     parser.add_argument("--arguments", default="{}", help="Base JSON arguments for the tool call")
     parser.add_argument("--plugin", default="sql_injection", choices=available_plugins())
@@ -36,6 +49,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def build_transport(args: argparse.Namespace) -> Transport:
+    if args.transport == "stdio":
+        return StdioTransport(args.url)
+    return StreamableHTTPTransport(args.url)
+
+
 async def _run(args: argparse.Namespace) -> int:
     try:
         base_arguments = json.loads(args.arguments)
@@ -45,7 +64,7 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.sessions > 1:
         report = await run_cross_session_campaign(
-            transport_factory=lambda: StreamableHTTPTransport(args.url),
+            transport_factory=lambda: build_transport(args),
             plugin_factory=lambda: get_plugin(args.plugin),
             tool_name=args.tool,
             base_arguments=base_arguments,
@@ -54,7 +73,7 @@ async def _run(args: argparse.Namespace) -> int:
             turns_per_session=args.turns,
         )
     else:
-        transport = StreamableHTTPTransport(args.url)
+        transport = build_transport(args)
         plugin = get_plugin(args.plugin)
         detectors = [CrossTurnLeakDetector(), LatencyDriftDetector()]
         engine = FuzzEngine(

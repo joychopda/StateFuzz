@@ -41,7 +41,9 @@ Concretely, the cool parts:
   `Mcp-Session-Id` response header → `notifications/initialized` → pin that
   ID on every following call). It's the same session a real client would
   hold open, so whatever the server does with that session — for better or
-  worse — is exactly what gets fuzzed.
+  worse — is exactly what gets fuzzed. `StdioTransport` speaks the same
+  handshake over a spawned subprocess's stdin/stdout instead, since most
+  real-world local MCP servers run over stdio, not HTTP.
 - **Marker-based leak detection, not guessing from response shape.** Every
   mutated turn gets a unique, unforgeable marker
   (`SFUZZ-<run_id>-<turn_index>`) baked into its arguments.
@@ -76,7 +78,7 @@ Concretely, the cool parts:
 ```
 fuzzer/
 ├── core/
-│   ├── transport.py      # Transport ABC + StreamableHTTPTransport (MCP over HTTP/JSON-RPC)
+│   ├── transport.py      # Transport ABC + StreamableHTTPTransport (HTTP/JSON-RPC) + StdioTransport (subprocess)
 │   ├── session.py        # SessionState / StateTracker — one session's memory
 │   ├── mutator.py        # MutationPlugin ABC + self-registering plugin loader
 │   ├── detector.py       # Detector/CrossSessionDetector ABCs + CrossTurnLeakDetector,
@@ -95,7 +97,9 @@ fuzzer/
   (`--plugin <name>` on the CLI) — no other file needs to change.
 - New detector → subclass `Detector`, add it to the `detectors` list passed
   into `FuzzEngine` (currently wired in `cli.py`).
-- New transport (e.g. stdio, WebSocket) → subclass `Transport`.
+- New transport (e.g. WebSocket) → subclass `Transport`. `StreamableHTTPTransport`
+  and `StdioTransport` are the two that exist today, selectable via
+  `--transport {http,stdio}`.
 
 **How state tracking works:** `StateTracker` holds one session's full turn
 history (request, response, latency, error) plus a `custom` scratch dict that
@@ -148,6 +152,17 @@ python -m fuzzer.cli \
   --sessions 3 --turns 5
 ```
 
+Against a local stdio MCP server — `--url` becomes the command to spawn:
+
+```bash
+python -m fuzzer.cli \
+  --transport stdio \
+  --url "python -m my_local_mcp_server" \
+  --tool some_tool \
+  --arguments '{"...": "..."}' \
+  --turns 10
+```
+
 Against a real target:
 
 ```bash
@@ -190,7 +205,7 @@ traffic, not just in unit isolation.
   against what was advertised at `initialize`
 - `context_window_overflow_mutator` — grow an argument turn over turn and
   detect silent truncation/drop behavior
-- stdio / WebSocket transports (only Streamable HTTP exists today)
+- WebSocket transport (Streamable HTTP and stdio are implemented)
 
 ## Status
 
