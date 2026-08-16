@@ -176,6 +176,43 @@ class LatencyDriftDetector(Detector):
         return []
 
 
+class SilentDropDetector(Detector):
+    """Flags a turn where the transport never got a response tied to the
+    request's id — a timeout, a connection failure, or the stdio read loop
+    exhausting its allowance of non-matching lines. This is distinct from a
+    tool-level rejection (a normal JSON-RPC response with ``isError: true``,
+    which leaves ``turn.error`` unset): here the server received the call
+    and never answered it at all.
+
+    Found in practice by fuzzing the Python MCP SDK's stdio server with a
+    deeply-nested-JSON argument: the SDK's parser hits its recursion limit
+    decoding the request, logs the exception server-side, and never emits a
+    response — silently swallowing the call instead of returning a
+    protocol-level error. A client with no client-side timeout hangs on that
+    turn forever; the fuzzer's own transport timeout is what turns that hang
+    into an observable ``turn.error`` here."""
+
+    name = "silent_drop"
+
+    def analyze(self, tracker: StateTracker, turn: Turn) -> list[Finding]:
+        if turn.response is not None or turn.error is None:
+            return []
+        return [
+            Finding(
+                detector=self.name,
+                severity="high",
+                turn_index=turn.index,
+                description=(
+                    f"Turn {turn.index} got no response tied to its request id "
+                    f"({turn.error or 'transport timed out'!r}) — the server silently dropped the call instead of "
+                    "returning a protocol-level error, which hangs a client with no "
+                    "client-side timeout."
+                ),
+                evidence={"request": turn.request, "error": turn.error},
+            )
+        ]
+
+
 def _linear_regression(xs: list[float], ys: list[float]) -> tuple[float, float]:
     """Ordinary least-squares slope and r-squared for a simple linear fit,
     with no numpy dependency since this is the only place that'd need it."""

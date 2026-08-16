@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from fuzzer.core.detector import CrossTurnLeakDetector, LatencyDriftDetector
+from fuzzer.core.detector import CrossTurnLeakDetector, LatencyDriftDetector, SilentDropDetector
 from fuzzer.core.engine import FuzzEngine
 from fuzzer.core.mutator import get_plugin
 from fuzzer.core.transport import StdioTransport
@@ -46,3 +46,43 @@ async def test_stdio_transport_reports_error_for_unknown_tool():
     assert turn.response["error"]["message"] == "unknown tool does_not_exist"
     assert turn.error == "unknown tool does_not_exist"
     assert report.turns_run == 1
+
+
+async def test_stdio_transport_skips_stray_notification_before_response():
+    # a server with logging/progress capabilities may interleave a
+    # notification (no "id") on stdout before answering our request - the
+    # transport must keep reading instead of misreading the notification as
+    # the response.
+    transport = StdioTransport(f"{sys.executable} {FIXTURE}")
+    engine = FuzzEngine(
+        transport=transport,
+        plugin=get_plugin("sql_injection"),
+        tool_name="noisy_echo",
+        base_arguments={"key": "profile"},
+        detectors=[],
+        max_turns=2,
+    )
+    report = await engine.run_campaign()
+
+    assert report.turns_run == 2
+    assert all(turn.error is None for turn in engine.tracker.state.turns)
+    assert all("echoed" in turn.response["result"] for turn in engine.tracker.state.turns)
+
+
+async def test_stdio_transport_reports_silent_drop_when_server_never_responds():
+    transport = StdioTransport(f"{sys.executable} {FIXTURE}", timeout=0.5)
+    engine = FuzzEngine(
+        transport=transport,
+        plugin=get_plugin("sql_injection"),
+        tool_name="silent_drop",
+        base_arguments={"key": "profile"},
+        detectors=[SilentDropDetector()],
+        max_turns=1,
+    )
+    report = await engine.run_campaign()
+
+    turn = engine.tracker.state.turns[0]
+    assert turn.response is None
+    assert turn.error is not None
+    assert len(report.findings) == 1
+    assert report.findings[0].detector == "silent_drop"

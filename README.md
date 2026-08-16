@@ -231,6 +231,7 @@ the self-registering `@register` loader) is what feeds its `choices`.
 | `cross_session_leak` | across N independent sessions (`--sessions N`) | one session's marker resurfaces in a *different* session's response | process-global or connection-unscoped state |
 | `latency_drift` | within one session | a turn's latency exceeds `mean + k*stddev` of an early baseline window, and an absolute floor | unbounded per-session state growth / memory leaks (sharp blow-up) |
 | `latency_trend` | within one session | linear-regression slope of latency vs. turn index across the whole history is positive and confident (r²) | the same, but a slow steady leak with no single outlier turn |
+| `silent_drop` | within one session | a turn's transport call fails (timeout, closed connection, or the stdio reader exhausting its non-matching-line allowance) with no response tied to the request id | a server that silently swallows a malformed/oversized call instead of returning a protocol-level error, hanging any client with no client-side timeout — found in the wild against the Python MCP SDK's stdio server via a deeply-nested-JSON argument that exceeds its parser's recursion limit |
 
 ## Roadmap
 

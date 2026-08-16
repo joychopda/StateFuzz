@@ -45,6 +45,21 @@ def main() -> None:
                     "id": req_id,
                     "result": {"content": [{"type": "text", "text": "echo"}], "echoed": arguments},
                 }
+            elif name == "noisy_echo":
+                # emits a spec-legal server notification (no "id") before the real
+                # response, the way a server with logging/progress capabilities would
+                sys.stdout.write(
+                    json.dumps({"jsonrpc": "2.0", "method": "notifications/message", "params": {"level": "info"}})
+                    + "\n"
+                )
+                sys.stdout.flush()
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {"content": [{"type": "text", "text": "echo"}], "echoed": arguments},
+                }
+            elif name == "silent_drop":
+                continue  # never responds, simulating a server that swallows the request
             else:
                 response = {
                     "jsonrpc": "2.0",

@@ -177,7 +177,24 @@ class StdioTransport(Transport):
             return None
 
         assert self._process.stdout is not None
-        raw = await asyncio.wait_for(self._process.stdout.readline(), timeout=self._timeout)
-        if not raw:
-            raise RuntimeError("stdio transport: subprocess closed stdout before sending a response")
-        return json.loads(raw.decode())
+        request_id = payload.get("id")
+        return await asyncio.wait_for(self._read_matching_response(request_id), timeout=self._timeout)
+
+    async def _read_matching_response(self, request_id) -> dict:
+        # Spec-compliant servers may interleave server-initiated notifications/requests
+        # (logging, progress, sampling, ...) on stdout before the actual response to our
+        # request. Those lack a matching "id" (or use their own request id going the other
+        # direction) - skip them instead of misreading them as our response.
+        assert self._process is not None
+        assert self._process.stdout is not None
+        for _ in range(100):
+            raw = await self._process.stdout.readline()
+            if not raw:
+                raise RuntimeError("stdio transport: subprocess closed stdout before sending a response")
+            try:
+                message = json.loads(raw.decode())
+            except json.JSONDecodeError:
+                continue
+            if request_id is None or message.get("id") == request_id:
+                return message
+        raise RuntimeError("stdio transport: gave up after 100 non-matching stdout lines")

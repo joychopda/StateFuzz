@@ -6,7 +6,7 @@ import json
 import sys
 
 from .core.cross_session import CrossSessionReport, run_cross_session_campaign
-from .core.detector import CrossTurnLeakDetector, LatencyDriftDetector, LatencyTrendDetector
+from .core.detector import CrossTurnLeakDetector, LatencyDriftDetector, LatencyTrendDetector, SilentDropDetector
 from .core.engine import CampaignReport, FuzzEngine
 from .core.mutator import available_plugins, get_plugin
 from .core.transport import StdioTransport, StreamableHTTPTransport, Transport
@@ -95,14 +95,24 @@ async def _run(args: argparse.Namespace) -> int:
             plugin_factory=lambda: get_plugin(args.plugin),
             tool_name=args.tool,
             base_arguments=base_arguments,
-            turn_detectors=[CrossTurnLeakDetector(), LatencyDriftDetector(), LatencyTrendDetector()],
+            turn_detectors=[
+                CrossTurnLeakDetector(),
+                LatencyDriftDetector(),
+                LatencyTrendDetector(),
+                SilentDropDetector(),
+            ],
             num_sessions=args.sessions,
             turns_per_session=args.turns,
         )
     else:
         transport = build_transport(args, headers)
         plugin = get_plugin(args.plugin)
-        detectors = [CrossTurnLeakDetector(), LatencyDriftDetector(), LatencyTrendDetector()]
+        detectors = [
+            CrossTurnLeakDetector(),
+            LatencyDriftDetector(),
+            LatencyTrendDetector(),
+            SilentDropDetector(),
+        ]
         engine = FuzzEngine(
             transport=transport,
             plugin=plugin,
